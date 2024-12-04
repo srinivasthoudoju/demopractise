@@ -1,0 +1,15 @@
+name: Hello World!
+on:
+  push
+jobs:
+  demo-workflow:
+    name: A sample demo workflow file
+    runs-on: ubuntu-latest
+
+    steps: 
+      - name: Checking out the code
+        uses: actions/checkout@v4
+
+      - name: Greetings!
+        run: echo "Hello!World!"
+    
