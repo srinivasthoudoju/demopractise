@@ -12,4 +12,9 @@ jobs:
 
       - name: Greetings!
         run: echo "Hello!World!"
+
+      - name: List the GithubWorkspace and the files
+        run: |
+          echo "${{github.workspace}}"
+          ls $GITHUB.WORKSPACE
     
