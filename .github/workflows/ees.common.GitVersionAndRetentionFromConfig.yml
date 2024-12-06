@@ -1,0 +1,351 @@
+on:
+  workflow_call:
+    outputs:
+      GIT_TAG:
+        description: "Git version calculated for repo."
+        value: ${{ jobs.setup.outputs.GIT_TAG }}
+      ARTIFACT_RETENTION_IN_DAYS:
+        description: "Number of days to retain artifacts."
+        value: ${{ jobs.setup.outputs.ARTIFACT_RETENTION_IN_DAYS }}
+      EXPECTED_ENVIRONMENT_NAME:
+        description: "The calculated environment to target based off of event meta data."
+        value: ${{ jobs.setup.outputs.EXPECTED_ENVIRONMENT_NAME }}
+      RUN_ID:
+        description: "The calculated environment to target based off of event meta data."
+        value: ${{ jobs.setup.outputs.RUN_ID }}
+
+jobs:
+  setup:
+    name: "Setup"
+    runs-on: ubuntu-latest
+    outputs:
+      GIT_TAG: ${{ steps.validateTag.outputs.version }}
+      ARTIFACT_RETENTION_IN_DAYS: ${{ steps.set-retention.outputs.ARTIFACT_RETENTION_IN_DAYS }}
+      EXPECTED_ENVIRONMENT_NAME: ${{ steps.branchDetails.outputs.ExpectedEnvironmentName }}
+      RUN_ID: ${{ steps.expandedWorkflowContext.outputs.RUN_ID }}      
+    steps:         
+      #get the source of the actual repo next
+      - name: "Checkout Source"
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.DEPENDABOT_GHE_TOKEN || github.token }}
+          fetch-depth: 0    
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v0
+        with:
+          versionSpec: '5.x'
+
+      - name: Dump GitHub
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
+
+      - name: Set RUN_ID Output
+        id: expandedWorkflowContext
+        run: |
+          echo "RUN_ID=${{ github.run_id }}" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+        
+      #determine the current branch, and author/edit a dynamic GitVersion.yml file such that the merge group is considered to be part of the target branch (instead of dev).
+      - name: Set PR/Merge Context
+        id: branchDetails
+        run: |
+          $eventType="${{ github.event_name }}"
+          echo "EventType=$eventType" >> $env:GITHUB_OUTPUT
+          $sourceBranch = ""
+          $targetBranch = ""
+      
+          if($eventType -eq "pull_request") {
+            # Code for pull_request event type
+            $sourceBranch = "${{ github.head_ref }}"
+            $targetBranch = "${{ github.ref }}"
+            Write-Host "PR Detected"      
+          }
+          elseif($eventType -eq "merge_group") {
+            # Code for merge_group event type
+            $sourceBranch = "${{ github.event.merge_group.head_ref }}"
+            $targetBranch = "${{ github.event.merge_group.base_ref }}"
+            Write-Host "Merge Group Detected"
+          }   
+          else{
+            throw "Unidentified event type: $eventType"
+          }
+      
+          Write-Host "Setting source branch as $sourceBranch."
+          echo "SourceBranchName=$sourceBranch" >> $env:GITHUB_OUTPUT
+      
+          Write-Host "Setting target branch as $targetBranch."
+          echo "TargetBranchName=$targetBranch" >> $env:GITHUB_OUTPUT
+      
+          # Determine tagging behavior
+          if($sourceBranch -like "bug/*" -and $eventType -eq "pull_request") 
+          {
+            Write-Host "This PR should result in a semver tag. Branch is a bug branch, because is matches to: 'bug/'"
+            echo "ShouldTag=true" >> $env:GITHUB_OUTPUT
+          }
+          elseif($eventType -eq "merge_group")
+          {
+            Write-Host "Merge groups should always tag."
+            echo "ShouldTag=true" >> $env:GITHUB_OUTPUT
+          }
+          else
+          {
+            Write-Host "This PR should not result in a semver tag. Branch is not a bug branch, as it does not start with 'bug/'"
+            echo "ShouldTag=false" >> $env:GITHUB_OUTPUT
+          }
+
+          #calculate Expected Environment Name based on event meta data
+          if($sourceBranch -like "bug/*" -and $eventType -eq "pull_request")
+          {
+            #this is a bug fix commit being processed as a PR. Do not generate an expected environment name. 
+            #If this build is deployed, it should be done manually
+            #throw "Not yet implemented."
+            echo "ExpectedEnvironmentName=" >> $env:GITHUB_OUTPUT
+          }
+          elseif($eventType -eq "pull_request")
+          {
+            #this is a pr from a work branch, leave target environment empty.
+            echo "ExpectedEnvironmentName=" >> $env:GITHUB_OUTPUT
+          }
+          elseif ($eventType -eq "merge_group") {            
+            #this is a merge group into a long running branch
+            if($targetBranch -like "refs/heads/*")
+            {
+              $branchShortName = $targetBranch -replace "refs/heads/", ""              
+              echo "TargetBranchShortName=$branchShortName" >> $env:GITHUB_OUTPUT
+              $expectedEnvironmentName = $branchShortName + "-dev"
+              echo "ExpectedEnvironmentName=$expectedEnvironmentName" >> $env:GITHUB_OUTPUT
+            }
+            else
+            {
+              throw "Unsupported target branch conditional."
+            }
+          }
+          else
+          {
+            throw "Unidentified event type and build meta data combination."
+          }
+        shell: pwsh
+
+      - name: Write GitVersion.yml if it doesn't exist
+        run: |
+            if [ ! -f GitVersion.yml ]; then
+              touch GitVersion.yml
+              yq eval '.branches.main.regex = "gh-readonly-queue/main(.+)"' -i GitVersion.yml
+              yq eval '.branches.main.mode = "ContinuousDeployment"' -i GitVersion.yml
+              yq eval '.branches.main.source-branches = ["development", "pullrequest"]' -i GitVersion.yml
+              yq eval '.branches.main.increment = "major"' -i GitVersion.yml
+              yq eval '.branches.development.regex = "gh-readonly-queue/develop(.+)"' -i GitVersion.yml
+              yq eval '.branches.development.mode = "ContinuousDeployment"' -i GitVersion.yml
+              yq eval '.branches.development.source-branches = ["workbranches", "pullrequest", "main"]' -i GitVersion.yml
+              yq eval '.branches.development.increment = "minor"' -i GitVersion.yml
+              yq eval '.branches.technicalpreview.regex = "gh-readonly-queue/technicalpreview(.+)"' -i GitVersion.yml
+              yq eval '.branches.technicalpreview.mode = "ContinuousDeployment"' -i GitVersion.yml
+              yq eval '.branches.technicalpreview.source-branches = ["workbranches", "pullrequest", "main"]' -i GitVersion.yml
+              yq eval '.branches.technicalpreview.increment = "minor"' -i GitVersion.yml
+              yq eval '.branches.pullrequest.regex = "pull/(\d+)/merge"' -i GitVersion.yml
+              yq eval '.branches.pullrequest.mode = "ContinuousDeployment"' -i GitVersion.yml
+              yq eval '.branches.pullrequest.source-branches = ["workbranches"]' -i GitVersion.yml
+              yq eval '.branches.pullrequest.increment = "patch"' -i GitVersion.yml
+              yq eval '.branches.workbranches.regex = "I(.+)"' -i GitVersion.yml
+              yq eval '.branches.workbranches.mode = "ContinuousDeployment"' -i GitVersion.yml
+              yq eval '.branches.workbranches.source-branches = ["pullrequest"]' -i GitVersion.yml
+              yq eval '.branches.workbranches.increment = "inherit"' -i GitVersion.yml
+            else
+              echo "GitVersion.yml found on disc already, skipping creating stock GitVersion.yml"
+            fi
+        shell: bash
+
+      - name: Print GitVersion.yml before replacement
+        run: cat GitVersion.yml
+        shell: bash
+      
+      - name: Update Configuration for bug/* PRs
+        if: ${{ steps.branchDetails.outputs.ShouldTag == 'true' }}
+        id: replaceGitVersionConfig
+        run: |
+          # Update the YAML file using yq
+          yq eval '.branches.pullrequest.increment = "patch"' -i GitVersion.yml          
+          echo "YAML file updated successfully."
+        shell: bash
+    
+      - name: Print GitVersion.yml after replacement
+        run: cat GitVersion.yml
+        shell: bash
+      
+      - name: Determine Version
+        id:   gitversion # id to later be referenced
+        uses: gittools/actions/gitversion/execute@v0
+        with:
+          useConfigFile: true
+          configFilePath: GitVersion.yml 
+
+      - name: Validate Git Tag For Repo
+        shell: pwsh
+        id: validateTag
+        run: |
+          Write-Host "Beginning validation of git tag!"    
+          
+          $version = "${{ steps.gitversion.outputs.majorMinorPatch }}" 
+          
+          $attempt = 0
+          $result = $false
+          
+          $gitTagsInRepo = (git ls-remote --tag ${{github.pull_request.head.repo.html_url}})
+            
+          Write-Host "The list of git tags in the repo (not formatted): $gitTagsInRepo"
+          
+          if(-Not $gitTagsInRepo)
+          {
+            Write-Host "No tags found in repo! Continuing..."
+
+            $result = $true
+            $output = $true
+            echo "tag=$output" >> $env:GITHUB_OUTPUT
+          }
+          else
+          {
+            Write-Host "Tags found in repo. Reducing them to only the git tags."
+            if($gitTagsInRepo -is [array])
+            {
+              Write-Host "Looping over git tag results, for each one only take the last portion of it which is the git tag."
+              For ($i=0;$i -lt $gitTagsInRepo.Length;$i++)
+              {
+                $temp = $gitTagsInRepo[$i].Split('/')
+                $gitTagsInRepo[$i] = $temp[2]
+              }
+            }
+            else
+            {
+              Write-Host "Only one tag exists, creating array with only that tag"
+              $temp = $gitTagsInRepo.Split('/')
+              $gitTagsInRepo = @($temp[2])
+            }			
+          }
+          
+          while($attempt -lt 30 -And -Not $result)
+          {
+            if ($gitTagsInRepo -match $version) 
+            {
+              Write-Host "Tag already exists! Incrementing the git tag based on target branch."
+              $versionArray = $version.Split(".")
+              $targetBranch = "${{ steps.branchDetails.outputs.TargetBranchName }}"
+              
+              if ($targetBranch -eq "main") {
+                  $versionArray[0] = ([int]$versionArray[0]) + 1
+              } elseif ($targetBranch -eq "develop") {
+                  $versionArray[1] = ([int]$versionArray[1]) + 1
+              } else {
+                  $versionArray[2] = ([int]$versionArray[2]) + 1
+              }
+              
+              $version = $versionArray -join "."
+              Write-Host "The new version is $version."
+
+            }   
+            else
+            {
+              Write-Host "Tag $version does not already exist! Exiting loop."
+              $result = $true
+              $output = "true"
+              echo "tag=$output" >> $env:GITHUB_OUTPUT
+              break;
+            }
+            
+            $attempt++
+          }
+          
+          Write-Host "Final results is version $version on attempt $attempt, the outcome of the process is $result. Have a great day!"
+          
+          if(-not $result)
+          {
+            Write-Error "Could not find an appropriate version! This version is too far behind what the repo expects as the next version. Perhaps it have tags in orphaned commits or branches, please check your repo."
+          }          
+
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Display GitVersion outputs (step output)
+        run: |
+          echo "MajorMinorPatch: ${{ steps.validateTag.outputs.version }}"
+          IFS='.' read -ra versionArray <<< "${{ steps.validateTag.outputs.version }}"
+          echo "Major: ${versionArray[0]}"
+          echo "Minor: ${versionArray[1]}"
+          echo "Patch: ${versionArray[2]}"
+          echo "PreReleaseTag: ${{ steps.gitversion.outputs.preReleaseTag }}"
+          echo "PreReleaseTagWithDash: ${{ steps.gitversion.outputs.preReleaseTagWithDash }}"
+          echo "PreReleaseLabel: ${{ steps.gitversion.outputs.preReleaseLabel }}"
+          echo "PreReleaseNumber: ${{ steps.gitversion.outputs.preReleaseNumber }}"
+          echo "WeightedPreReleaseNumber: ${{ steps.gitversion.outputs.weightedPreReleaseNumber }}"
+          echo "BuildMetaData: ${{ steps.gitversion.outputs.buildMetaData }}"
+          echo "BuildMetaDataPadded: ${{ steps.gitversion.outputs.buildMetaDataPadded }}"
+          echo "FullBuildMetaData: ${{ steps.gitversion.outputs.fullBuildMetaData }}"
+          echo "SemVer: ${{ steps.gitversion.outputs.semVer }}"
+          echo "LegacySemVer: ${{ steps.gitversion.outputs.legacySemVer }}"
+          echo "LegacySemVerPadded: ${{ steps.gitversion.outputs.legacySemVerPadded }}"
+          echo "AssemblySemVer: ${{ steps.gitversion.outputs.assemblySemVer }}"
+          echo "AssemblySemFileVer: ${{ steps.gitversion.outputs.assemblySemFileVer }}"
+          echo "FullSemVer: ${{ steps.gitversion.outputs.fullSemVer }}"
+          echo "InformationalVersion: ${{ steps.gitversion.outputs.informationalVersion }}"
+          echo "BranchName: ${{ steps.gitversion.outputs.branchName }}"
+          echo "EscapedBranchName: ${{ steps.gitversion.outputs.escapedBranchName }}"
+          echo "Sha: ${{ steps.gitversion.outputs.sha }}"
+          echo "ShortSha: ${{ steps.gitversion.outputs.shortSha }}"
+          echo "NuGetVersionV2: ${{ steps.gitversion.outputs.nuGetVersionV2 }}"
+          echo "NuGetVersion: ${{ steps.gitversion.outputs.nuGetVersion }}"
+          echo "NuGetPreReleaseTagV2: ${{ steps.gitversion.outputs.nuGetPreReleaseTagV2 }}"
+          echo "NuGetPreReleaseTag: ${{ steps.gitversion.outputs.nuGetPreReleaseTag }}"
+          echo "VersionSourceSha: ${{ steps.gitversion.outputs.versionSourceSha }}"
+          echo "CommitsSinceVersionSource: ${{ steps.gitversion.outputs.commitsSinceVersionSource }}"
+          echo "CommitsSinceVersionSourcePadded: ${{ steps.gitversion.outputs.commitsSinceVersionSourcePadded }}"
+          echo "UncommittedChanges: ${{ steps.gitversion.outputs.uncommittedChanges }}"
+          echo "CommitDate: ${{ steps.gitversion.outputs.commitDate }}"
+        shell: bash
+
+      - name: Tag - Apply Semver to Repo
+        uses: actions/github-script@v6
+        if: ${{ steps.branchDetails.outputs.ShouldTag == 'true' && steps.validateTag.outputs.tag == 'true' }}
+        with:
+          script: |
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'refs/tags/${{ steps.validateTag.outputs.version }}',
+              sha: '${{ steps.gitversion.outputs.sha }}'
+            })
+
+      - name: "Compute Artifact Retention in Days"
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        id: "set-retention"
+        run: |
+          $json = $env:GITHUB_CONTEXT
+          $jsonObject = ConvertFrom-Json -InputObject $json
+
+          if ($jsonObject.event_name -eq "merge_group") {
+              if ($jsonObject.event.merge_group.base_ref -eq "refs/heads/main") {
+                  Write-Host "Value found at event.merge_group.base_ref: $($jsonObject.event.merge_group.base_ref)"
+                  
+                  $message_prefix="Currently";
+                  $retention_adjective="preservative";
+                  $retention=30;
+              }
+              else {
+                  Write-Host "Non main branch merge group detected."
+                  
+                  $message_prefix="Not currently";
+                  $retention_adjective="limited";
+                  $retention=2;
+              }
+          }
+          else {
+              Write-Host "Not a merge group"
+              
+              $message_prefix="Not currently";
+              $retention_adjective="limited";
+              $retention=2;
+          }
+          echo "${message_prefix} building the main branch, use a ${retention_adjective} retention of ${retention} days";
+          echo "ARTIFACT_RETENTION_IN_DAYS=${retention}" >> $env:GITHUB_OUTPUT
+        shell: pwsh
