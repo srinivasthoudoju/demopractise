@@ -13,12 +13,6 @@ jobs:
       - name: Greetings!
         run: echo "Hello!World!"
 
-      - name: Checkout srinivasthoudoju repository
-        uses: actions/checkout@v4
-        with:
-          repository: srinivasthoudoju/srinivasthoudoju
-          path: "srinivasthoudoju"
-
       - name: List the workspace and the files
         run: |
           echo "${{github.workspace}}"
