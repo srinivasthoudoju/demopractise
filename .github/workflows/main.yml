@@ -24,5 +24,6 @@ jobs:
           echo "${{github.workspace}}"
           ls $GITHUB_WORKSPACE
           ls ${{github.workspace}}/srinivasthoudoju
+          echo "${{github.actor}}"
           
     
