@@ -1,0 +1,9 @@
+name: Pull Request Triggered Actions
+run-name: Pull Request CI - ${{ github.run_number }}_${{ github.run_attempt }}
+on:
+  - pull_request
+
+jobs:
+  CalculateGitTagAndRetention:
+    uses: /.github/workflows/ees.common.GitVersionAndRetentionFromConfig.yml
+    secrets: inherit
