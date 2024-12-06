@@ -1,0 +1,9 @@
+name: Merge Group Triggered Actions
+run-name: "Merge Group CI Queue - ${{ github.run_number }}_${{ github.run_attempt }}"
+
+on: merge_group
+
+jobs:
+  CalculateGitTagAndRetention:
+    uses: /.github/workflows/ees.common.GitVersionAndRetentionFromConfig.yml
+    secrets: inherit
