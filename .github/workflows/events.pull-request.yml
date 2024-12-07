@@ -5,5 +5,5 @@ on:
 
 jobs:
   CalculateGitTagAndRetention:
-    uses: /.github/workflows/ees.common.GitVersionAndRetentionFromConfig.yml
+    uses: ./.github/workflows/ees.common.GitVersionAndRetentionFromConfig.yml
     secrets: inherit
