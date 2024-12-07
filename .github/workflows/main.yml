@@ -19,5 +19,6 @@ jobs:
           echo "ls $GITHUB_WORKSPACE"
           echo "${{github.actor}}"
           echo "${{github.workflow}}"
+          echo "${{git.version}}"
           
     
