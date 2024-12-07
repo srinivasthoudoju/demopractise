@@ -22,7 +22,6 @@ jobs:
           echo "${{github.repository}}"
           echo "${{github.server.url}}"
           echo "${{github.repository.owner}}"
-          echo "${{retention.days}}"
           echo "${{runner.name}}"
           
     
