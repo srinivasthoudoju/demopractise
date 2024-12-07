@@ -16,7 +16,7 @@ jobs:
       - name: List the workspace and the files
         run: |
           echo "${{github.workspace}}"
-          ls $GITHUB_WORKSPACE
+          echo "ls $GITHUB_WORKSPACE"
           echo "${{github.actor}}"
           
     
