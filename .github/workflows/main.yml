@@ -20,5 +20,6 @@ jobs:
           echo "${{github.actor}}"
           echo "${{github.workflow}}"
           echo "${{github.repository}}"
+          echo "${{github.repository.owner}}"
           
     
