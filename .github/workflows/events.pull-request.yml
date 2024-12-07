@@ -7,3 +7,11 @@ jobs:
   CalculateGitTagAndRetention:
     uses: ./.github/workflows/ees.common.GitVersionAndRetentionFromConfig.yml
     secrets: inherit
+
+  Build:
+    uses: ./.github/workflows/main.yml
+    secrets: inherit
+    needs: calculateGitTagAndRetenttion
+    with:
+        gitVersion: ${{needs.calculateGitTagAndRetention.outputs.GIT_TAG}}
+        daysToRetain: ${{ needs.CalculateGitTagAndRetention.outputs.ARTIFACT_RETENTION_IN_DAYS }}
