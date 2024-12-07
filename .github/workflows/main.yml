@@ -19,6 +19,6 @@ jobs:
           echo "ls $GITHUB_WORKSPACE"
           echo "${{github.actor}}"
           echo "${{github.workflow}}"
-          echo "${{github_repository}}
+          echo "${{github.repository}}
           
     
