@@ -21,6 +21,7 @@ jobs:
           echo "${{github.workflow}}"
           echo "${{github.repository}}"
           echo "${{github.repository.owner}}"
-          echo "${{github.retention.days}}"
+          echo "${{retention.days}}"
+          echo "${{runner.name}}"
           
     
