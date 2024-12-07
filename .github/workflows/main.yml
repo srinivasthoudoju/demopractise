@@ -20,6 +20,7 @@ jobs:
           echo "${{github.actor}}"
           echo "${{github.workflow}}"
           echo "${{github.repository}}"
+          echo "${{github.server.url}}"
           echo "${{github.repository.owner}}"
           echo "${{retention.days}}"
           echo "${{runner.name}}"
