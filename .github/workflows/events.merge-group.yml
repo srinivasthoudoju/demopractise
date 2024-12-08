@@ -17,3 +17,4 @@ jobs:
     with:
       gitVersion: ${{ needs.CalculateGitTagAndRetention.outputs.GIT_TAG }}
       daysToRetain: ${{ needs.CalculateGitTagAndRetention.outputs.ARTIFACT_RETENTION_IN_DAYS }}
+      
