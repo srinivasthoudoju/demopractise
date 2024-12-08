@@ -2,7 +2,7 @@ name: Pull Request Triggered Actions
 run-name: Pull Request CI - ${{ github.run_number }}_${{ github.run_attempt }}
 on:
   pull_request:
-    branches: [main]
+    branches: [ main ]
 
 
 jobs:

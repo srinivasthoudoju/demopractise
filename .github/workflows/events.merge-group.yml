@@ -3,7 +3,7 @@ run-name: "Merge Group CI Queue - ${{ github.run_number }}_${{ github.run_attemp
 
 on:
  merge_group:
-  branches: [main]
+  branches: [ main ]
 
 jobs:
   CalculateGitTagAndRetention:
