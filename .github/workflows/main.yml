@@ -32,5 +32,6 @@ jobs:
           echo "${{github.server.url}}"
           echo "${{github.repository.owner}}"
           echo "${{runner.name}}"
+          echo "${{github.ref}}"
           
     
